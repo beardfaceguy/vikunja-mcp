@@ -158,6 +158,8 @@ export function registerTasksTool(
       // Recurring task fields
       repeatAfter: z.number().min(0).optional(),
       repeatMode: z.enum(['day', 'week', 'month', 'year']).optional(),
+      // Completion progress, 0-100, matching the range batch-import already uses
+      percentDone: z.number().min(0).max(100).optional(),
       // Query fields
       id: z.number().optional(),
       filter: z.string().optional(),

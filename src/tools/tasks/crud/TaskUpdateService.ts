@@ -25,6 +25,8 @@ export interface UpdateTaskArgs {
   assignees?: number[];
   repeatAfter?: number;
   repeatMode?: 'day' | 'week' | 'month' | 'year';
+  /** Completion progress, 0-100. Maps to the API's `percent_done`. */
+  percentDone?: number;
   // Session ID for AORP response tracking
   sessionId?: string;
 }
@@ -137,6 +139,7 @@ async function analyzeUpdateState(client: VikunjaClient, taskId: number, args: U
   if (currentTask.done !== undefined) previousState.done = currentTask.done;
   if (currentTask.repeat_after !== undefined) previousState.repeat_after = currentTask.repeat_after;
   if (currentTask.repeat_mode !== undefined) previousState.repeat_mode = currentTask.repeat_mode;
+  if (currentTask.percent_done !== undefined) previousState.percent_done = currentTask.percent_done;
 
   // Track which fields are being updated
   const affectedFields: string[] = [];
@@ -150,6 +153,7 @@ async function analyzeUpdateState(client: VikunjaClient, taskId: number, args: U
   if (args.repeatMode !== undefined && args.repeatMode !== currentTask.repeat_mode) affectedFields.push('repeatMode');
   if (args.labels !== undefined) affectedFields.push('labels');
   if (args.assignees !== undefined) affectedFields.push('assignees');
+  if (args.percentDone !== undefined && args.percentDone !== currentTask.percent_done) affectedFields.push('percentDone');
 
   return {
     currentTask,
@@ -171,6 +175,7 @@ function buildUpdateData(currentTask: Task, args: UpdateTaskArgs): Task {
     ...(args.dueDate !== undefined && { due_date: args.dueDate }),
     ...(args.priority !== undefined && { priority: args.priority }),
     ...(args.done !== undefined && { done: args.done }),
+    ...(args.percentDone !== undefined && { percent_done: args.percentDone }),
     // Handle repeat configuration for updates
     ...(args.repeatAfter !== undefined || args.repeatMode !== undefined
       ? ((): Record<string, unknown> => {
