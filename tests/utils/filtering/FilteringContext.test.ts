@@ -199,7 +199,10 @@ describe('FilteringContext', () => {
         expect(ClientSideFilteringStrategy).not.toHaveBeenCalled();
       });
 
-      it('should use HybridFilteringStrategy in production even when env var is false', () => {
+      it('should honour an explicit env var opt-out even in production', () => {
+        // The env var is authoritative in both directions. An operator who sets it
+        // to 'false' has opted out deliberately, and production should not override
+        // that. (Previously production won, making the opt-out silently useless.)
         process.env.NODE_ENV = 'production';
         process.env.VIKUNJA_ENABLE_SERVER_SIDE_FILTERING = 'false';
 
@@ -208,9 +211,9 @@ describe('FilteringContext', () => {
         };
 
         const context = new FilteringContext(config);
-        
-        expect(HybridFilteringStrategy).toHaveBeenCalled();
-        expect(ClientSideFilteringStrategy).not.toHaveBeenCalled();
+
+        expect(ClientSideFilteringStrategy).toHaveBeenCalled();
+        expect(HybridFilteringStrategy).not.toHaveBeenCalled();
       });
 
       it('should use HybridFilteringStrategy in test with env var true', () => {
@@ -237,6 +240,25 @@ describe('FilteringContext', () => {
 
         const context = new FilteringContext(config);
         
+        expect(HybridFilteringStrategy).toHaveBeenCalled();
+        expect(ClientSideFilteringStrategy).not.toHaveBeenCalled();
+      });
+
+      it('should attempt server-side by default when NODE_ENV is unset and no env var is given', () => {
+        // Regression: this is the real MCP deployment shape. The server is spawned
+        // over stdio by a client, so NODE_ENV is unset and no opt-in var exists.
+        // Under the old gate this fell through to the single-page client-side path,
+        // which made a filter whose matches lived on page 2+ return zero results and
+        // report that as authoritative.
+        delete process.env.NODE_ENV;
+        delete process.env.VIKUNJA_ENABLE_SERVER_SIDE_FILTERING;
+
+        const config: StrategyConfig = {
+          enableServerSide: true
+        };
+
+        const context = new FilteringContext(config);
+
         expect(HybridFilteringStrategy).toHaveBeenCalled();
         expect(ClientSideFilteringStrategy).not.toHaveBeenCalled();
       });
@@ -304,7 +326,7 @@ describe('FilteringContext', () => {
         expect(HybridFilteringStrategy).not.toHaveBeenCalled();
       });
 
-      it('should handle mixed case NODE_ENV', () => {
+      it('should treat an unrecognised NODE_ENV as a deployment', () => {
         process.env.NODE_ENV = 'Production';
         delete process.env.VIKUNJA_ENABLE_SERVER_SIDE_FILTERING;
 
@@ -313,10 +335,12 @@ describe('FilteringContext', () => {
         };
 
         const context = new FilteringContext(config);
-        
-        // Should use client-side since 'Production' !== 'production'
-        expect(ClientSideFilteringStrategy).toHaveBeenCalled();
-        expect(HybridFilteringStrategy).not.toHaveBeenCalled();
+
+        // 'Production' is not one of the dev/test harness values, so it is treated
+        // as a real deployment and the server-side attempt is made. Only
+        // 'development' and 'test' opt out implicitly.
+        expect(HybridFilteringStrategy).toHaveBeenCalled();
+        expect(ClientSideFilteringStrategy).not.toHaveBeenCalled();
       });
     });
   });

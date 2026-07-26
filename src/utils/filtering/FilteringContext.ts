@@ -28,22 +28,45 @@ export class FilteringContext {
 
   /**
    * Select the appropriate filtering strategy based on configuration
-   * 
-   * This method preserves the original environment-based logic:
-   * - If server-side filtering is enabled AND we're in production OR the env var is set,
-   *   use hybrid filtering (server attempt + client fallback)
-   * - Otherwise, use client-side only filtering
+   *
+   * Server-side filtering is attempted by DEFAULT when a filter is present.
+   *
+   * Previously this required `NODE_ENV === 'production'` or an explicit opt-in env
+   * var. That gate does not fit an MCP server: the process is spawned over stdio by
+   * a client (Claude Desktop/Code, Zed, ...) with no NODE_ENV set, so neither branch
+   * was ever true in real use and every deployment silently fell back to
+   * client-side filtering. Because the client-side path filters only the single page
+   * it fetched, a filter whose matches live on a later page returned zero results
+   * and reported that as an authoritative answer.
+   *
+   * Selection order:
+   * 1. `VIKUNJA_ENABLE_SERVER_SIDE_FILTERING` is authoritative in both directions
+   *    ('true' forces the server-side attempt, 'false' forces client-side only).
+   * 2. Otherwise, attempt server-side unless NODE_ENV marks a dev/test harness,
+   *    where tests rely on the deterministic client-side path.
+   *
+   * The server-side attempt is not a correctness risk on its own:
+   * HybridFilteringStrategy falls back to client-side if the request fails, so an
+   * older Vikunja that ignores or rejects `filter` still works.
    */
   private getStrategy(config: StrategyConfig): TaskFilteringStrategy {
-    const shouldAttemptServerSideFiltering = config.enableServerSide && (
-      process.env.NODE_ENV === 'production' || 
-      process.env.VIKUNJA_ENABLE_SERVER_SIDE_FILTERING === 'true'
-    );
-
-    if (shouldAttemptServerSideFiltering) {
-      return new HybridFilteringStrategy();
+    if (!config.enableServerSide) {
+      return new ClientSideFilteringStrategy();
     }
 
-    return new ClientSideFilteringStrategy();
+    const optIn = process.env.VIKUNJA_ENABLE_SERVER_SIDE_FILTERING;
+    if (optIn === 'true') {
+      return new HybridFilteringStrategy();
+    }
+    if (optIn === 'false') {
+      return new ClientSideFilteringStrategy();
+    }
+
+    const nodeEnv = process.env.NODE_ENV;
+    const isDevOrTestHarness = nodeEnv === 'development' || nodeEnv === 'test';
+
+    return isDevOrTestHarness
+      ? new ClientSideFilteringStrategy()
+      : new HybridFilteringStrategy();
   }
 }
