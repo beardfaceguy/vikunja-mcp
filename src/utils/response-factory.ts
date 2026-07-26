@@ -67,9 +67,55 @@ export function createSimpleResponse(
 }
 
 /**
+ * Response wire formats supported by {@link formatResponseForMcp}.
+ */
+export type McpResponseFormat = 'markdown' | 'json';
+
+/**
+ * Resolve the wire format from the environment.
+ *
+ * Defaults to 'markdown' so existing behaviour is unchanged. Set
+ * `VIKUNJA_MCP_RESPONSE_FORMAT=json` for machine-readable output.
+ *
+ * Read per call rather than cached at import time so tests (and a long-lived
+ * process whose env is adjusted) observe the current value.
+ */
+export function resolveMcpResponseFormat(): McpResponseFormat {
+  return process.env.VIKUNJA_MCP_RESPONSE_FORMAT?.trim().toLowerCase() === 'json'
+    ? 'json'
+    : 'markdown';
+}
+
+/**
  * Format response for MCP (replaces AORP formatting)
+ *
+ * Markdown remains the default. Under `VIKUNJA_MCP_RESPONSE_FORMAT=json` the
+ * structured payload is emitted instead, which matters for programmatic callers
+ * for two reasons: the markdown has to be parsed apart to be used at all, and it
+ * is lossy, since collection items are dropped once a result exceeds 10 rows.
  */
 export function formatResponseForMcp(response: SimpleResponse): string {
+  if (resolveMcpResponseFormat() === 'json') {
+    const payload: Record<string, unknown> = {
+      success: response.metadata?.success ?? true,
+    };
+
+    if (response.metadata?.operation !== undefined) {
+      payload.operation = response.metadata.operation;
+    }
+    if (response.message !== undefined) {
+      payload.message = response.message;
+    }
+    if (response.data !== undefined) {
+      payload.data = response.data;
+    }
+    if (response.metadata !== undefined) {
+      payload.metadata = response.metadata;
+    }
+
+    return JSON.stringify(payload, null, 2);
+  }
+
   return response.content;
 }
 

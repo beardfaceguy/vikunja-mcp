@@ -43,10 +43,27 @@ export interface DataItem {
  * Simple response structure - replaces complex AORP system
  */
 export interface SimpleResponse {
-  /** Response content */
+  /** Response content, pre-rendered as markdown */
   content: string;
   /** Response metadata */
   metadata?: ResponseMetadata;
+  /**
+   * The human-readable message, kept unrendered.
+   *
+   * `content` bakes the message into markdown. Retaining it separately lets
+   * consumers that want structured output rebuild a response without parsing
+   * the markdown back apart.
+   */
+  message?: string;
+  /**
+   * The structured payload this response was built from.
+   *
+   * Markdown rendering is lossy: `formatSuccessMessage` omits collection items
+   * entirely once there are more than 10, so a 50-task listing renders as a bare
+   * count. Keeping the original data lets `formatResponseForMcp` emit complete
+   * JSON when a caller asks for it.
+   */
+  data?: ResponseData;
 }
 
 /**
@@ -61,8 +78,9 @@ export function createSuccessResponse(
 ): SimpleResponse {
   const content = formatSuccessMessage(operation, message, data, metadata);
 
-  return {
+  const response: SimpleResponse = {
     content,
+    message,
     metadata: {
       timestamp: new Date().toISOString(),
       success: true,
@@ -70,6 +88,13 @@ export function createSuccessResponse(
       ...metadata,
     },
   };
+
+  // Assigned conditionally to satisfy exactOptionalPropertyTypes.
+  if (data !== undefined) {
+    response.data = data;
+  }
+
+  return response;
 }
 
 /**
@@ -86,6 +111,7 @@ export function createErrorResponse(
 
   return {
     content,
+    message,
     metadata: {
       timestamp: new Date().toISOString(),
       success: false,
