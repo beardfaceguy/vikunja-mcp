@@ -287,11 +287,32 @@ export class FilterStorageManager {
   }
 
   private startCleanupTimer(): void {
-    this.cleanupInterval = setInterval(() => {
+    const timer = setInterval(() => {
       this.cleanupInactiveSessions().catch(error => {
         logger.error('Failed to cleanup inactive sessions', { error: error instanceof Error ? error.message : String(error) });
       });
     }, this.CLEANUP_INTERVAL_MS);
+
+    // Unref'd deliberately. This is background housekeeping, so it must not be a
+    // reason for the process to stay alive. The manager is constructed at module
+    // scope below, which means merely importing anything that reaches this module
+    // used to start a one-hour interval that held the event loop open forever:
+    // `node -e "require('./dist/storage')"` never exited, and any jest suite whose
+    // import graph touched storage hung after passing, reporting only
+    // "Jest did not exit one second after the test run has completed".
+    //
+    // It also made the `process.on('exit')` destroy hook below unreachable in
+    // practice: 'exit' fires when the loop drains, and this timer stopped it from
+    // ever draining.
+    //
+    // Cleanup still runs on schedule for as long as something else keeps the
+    // process alive, which for a long-lived MCP server is always. Guarded because
+    // fake timers can hand back a plain number with no unref.
+    if (typeof timer.unref === 'function') {
+      timer.unref();
+    }
+
+    this.cleanupInterval = timer;
   }
 
   private async cleanupInactiveSessions(): Promise<void> {
